@@ -27,6 +27,28 @@ Atlas currently is only equipped to be an `External` payload for Apfell. A Paylo
 9. At the top of the `Config.cs`, `Http.cs`, and `Crypto.cs` files, you will see a `#define DEFAULT` code line. This let's Atlas determine what code to keep during compilation to reduce extra code. Change this value to fit the communication type you configured in Apfell (`DEFAULT`, `DEFAULT_PSK`, `DEFAULT_EKE`).
 10. When all config variables have been set, select the `Build` drop down from the top options menu and select `Build Solution`. This should produce a .NET assembly of your Atlas agent.
 
+## Pre-built Assembly Modules
+I've included 3 assembly projects to give Atlas some basic functionality. Below are the descriptions and usage.
+
+`processlist` - This is a basic process listing application based off of [@cobbr's](https://twitter.com/cobbr_io?lang=en) code from [SharpSploit](https://github.com/cobbr/SharpSploit), it will retrieve current running process's PID, PPID, Arch, Name, and Owner.
+
+`run` - This is slightly modified code from [@_RastaMouse](https://twitter.com/_rastamouse?lang=en) which he waskind enough to share after my struggles with named pipes redirection. This assembly executes shell commands while spoofing parent process ID and blocking non microsoft dlls from the process space. Neat little code and seems useful. (this does not execute via `cmd.exe`, if you would like to execute commands through there, start the command with `cmd.exe /c`)
+```
+Usage:
+  run.exe <PPID> <command>
+Example:
+  run.exe 4343 ipconfig /all
+Note: PPID is required for command
+```
+
+`apcinject` - Again, not my code. This is a slightly modified version of process injection using QueueUserAPC with a new process and suspended thread created by [@0xthirteen](https://twitter.com/0xthirteen).
+```
+Usage:
+  apcinject.exe <path to target application> <base64 shellcode>
+Example:
+  apcinject.exe C:\Windows\System32\svchost.exe SGFjayB0aGUgUGxhbmV0IQ==
+```
+
 ## TODO
 - Create Payload docker container to fully integrate into Apfell
 - Create plumbing for HTTP C2 profile use
