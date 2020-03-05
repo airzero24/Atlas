@@ -95,7 +95,24 @@ config proxy password Liv3F0rTh3Tw!ts
 ## Support Assemblies
 Since functionality in Atlas is loaded via .NET assemblies, I have provided three support .NET projects that give Atlas basic RAT capability. Your welcome to use whatever fits your needs, but these are a good start.
 
-- link here
+`processlist` - This is a basic process listing application based off of [@cobbr's](https://twitter.com/cobbr_io?lang=en) code from [SharpSploit](https://github.com/cobbr/SharpSploit), it will retrieve current running process's PID, PPID, Arch, Name, and Owner.
+
+`run` - This is slightly modified code from [@_RastaMouse](https://twitter.com/_rastamouse?lang=en) which he was kind enough to share after my struggles with named pipes redirection. This assembly executes shell commands while spoofing parent process ID and blocking non microsoft dlls from the process space. Neat little code and seems useful. (this does not execute via `cmd.exe`, if you would like to execute commands through there, start the command with `cmd.exe /c`)
+```
+Usage:
+  run.exe <PPID> <command>
+Example:
+  run.exe 4343 ipconfig /all
+Note: PPID is required for command
+```
+
+`apcinject` - Again, not my code. This is a slightly modified version of process injection using QueueUserAPC with a new process and suspended thread created by [@0xthirteen](https://twitter.com/0xthirteen).
+```
+Usage:
+  apcinject.exe <path to target application> <base64 shellcode>
+Example:
+  apcinject.exe C:\Windows\System32\svchost.exe SGFjayB0aGUgUGxhbmV0IQ==
+```
 
 ##  Acknowledgments
 This project would not of been possible without the help and support of my coworkers
