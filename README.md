@@ -1,56 +1,105 @@
 # Atlas
+![](Atlas.png)
 
-Atlas is a PoC agent for Apfell written in C# and targeted towards Windows 10+ OS's and .NET framework v4.0 (may work on v3.5 but hasn't been throughly tested). The agent has minimal functionality, only allowing 3 commands, `loadassembly`, `runassembly`, `listloaded`, and `exit`. Below is the purpose and uses for each command, followed by instructions for loading the agent into Apfell. Eventually this will be a docker container within Apfell, using Mono to compile the agents, it's a TODO item.
+Atlas is a lightweight Windows Apfell agent written in C#. It was intended to be used as an initial access agent with a focus on stability and flexibility in it's configuration. I create the agent in an attempt to learn more about coding in C#, so the code is not optimized or written in the "proper" way. It was a fun project and I hope it may be useful to people for red team assessments and penetration testing.
 
-`loadassembly` - This command is used to load any arbitrary .NET assembly file into the agent's AppDomain for future use. Need's more testing with larger files but _should_ chunk files correctly and handle them accordingly. This method uses the `Assembly.Load` function to dynamically the load the assemblies into the agent's AppDomain. Assembly name's are added to a `Modules` list to keep track of loaded assemblies, this should help avoid loaded duplicate assemblies in the same agent.
+## Features
+- 3.5/4.0 .NET compatibility
+- Small assembly size: <54Kb
+- Dynamic .NET assembly loading and execution
+	- Loaded assemblies are tracked so they only need to be loaded once
+- Upload/Download files
+- Proxy support
+- Dynamic agent configuration
+	- Add/remove C2 servers
+	- Change sleep time and jitter
+	- Change user-agent and host header
+	- Change kill date
+	- Modify query parameter for GET requests
+	- Modify Proxy settings
+- Intelligent C2 server selection
+	- Keeps track of failed connections to servers and always chooses server with least failed connections
+	- Tracking of failed connections is display with configuration data
 
-`runassembly` - This command is used to execute a loaded .NET assembly from he list of loaded assemblies. For successful execution the assembly MUST have a valid `EntryPoint`. Console output from executed assemblies will be redirected and sent back to the Apfell server and command output. This command will only execute assemblies in the `Modules` list of loaded assemblies, ie. you have to use `loadassembly` to load an assembly before you can execute it with `runassembly`.
+## Build Instructions
+Then navigate to `Manage Operations > Payload Management` on the Apfell server, and import the `atlas.json` file. This registers the payload with the Apfell server as an externally hosted payload.
 
-`listloaded` - This command will get the name's of assemblies currently in the agent's `Modules` list of assemblies loaded with `loadassembly`.
+You can then register the payload with the Apfell server via `Create Components > Create Payload` on the Apfell server, and stuff the PayloadUUID and other relevant information into `Config.cs`
 
-`exit` - This command simply exit's the process for the agent using `Environment.Exit`.
-
-## How to setup with Apfell
-Atlas currently is only equipped to be an `External` payload for Apfell. A Payload docker container is in the works. The follow steps describe how to import Atlas into Apfell to use as an agent.
-
-1. Navigate to `Manage Operations` -> `Payload Management`, to the right of `Global Payload Type and Command Information` there should be a blue `import` button. Select this and select the `atlas.json` file from the Atlas project folder.
-2. Next, navigate to `Manage Operations` -> `Transform Management`, and copy the contents of `transforms.py` from the Atlas project folder into the displayed input box. You can _optionally_ upload the file and submit the uploaded code if you would not like to copy/paste.
-3. Next, navigate to `Manage Operations` -> `C2 Profiles Management`, select the yellow `Edit` button next to the `default` C2 profile and select `Supported Payloads & info`. In this pop out, you will see a `Supported Payloads` section, ensure to click the button next to `atlas` so that it shows green.
-4. For the final setup inside of Apfell, navigate to `Create Components` -> `Create Payload`, select `default` from the C2 profile drop down menu, and fill in the data for the agent. Copy the value for the `AES key` for the agent config later IF you are going to use AES encryption or the RSA EKE features of the agent. When finished, select `Select Payload Type`.
->Note: This values will be manually enter into the agent's config, the only required items on the Apfell side are `Base64 32byte AES Key`, `callback host`, `Encrypted Key Exchange (T/F)`, and `Kill Date`.
-5. Select `atlas` from the drop down menu and click `Next`.
-6. All available commands will be auto-selected for you, simply click `Next`. Then select the `Create Payload` button at the bottom of the screen. Once the payload is created you should see a pop up message in the top right of the browser giving the payload's `UUID`. Copy this where you saved the `AES Key` information to put into the agent's config.
-7. Now open the `Atlas.sln` Visual Studio project file (created with Visual Studio 2017). In the `Solution Explorer` pane on the right side, select the `Config.cs` file under the `Atlas` project. Fill out the configuration data in this file. Ensure the `UUID` you got from creating a payload in Apfell is entered into the `PayloadUUID` variable.
->Note: Enter the callback host in the `Servers` array. Atlas allows you to specify multiple callback hosts in this array, but will only select one as a primary C2 domain when a successful connection attempt is made.
-
->Note: For the `Jitter` config option, enter this number as if it were a percentage, so `30%` jitter would just be `30`
-9. At the top of the `Config.cs`, `Http.cs`, and `Crypto.cs` files, you will see a `#define DEFAULT` code line. This let's Atlas determine what code to keep during compilation to reduce extra code. Change this value to fit the communication type you configured in Apfell (`DEFAULT`, `DEFAULT_PSK`, `DEFAULT_EKE`).
-10. When all config variables have been set, select the `Build` drop down from the top options menu and select `Build Solution`. This should produce a .NET assembly of your Atlas agent.
-
-## Pre-built Assembly Modules
-I've included 3 assembly projects to give Atlas some basic functionality. Below are the descriptions and usage.
-
-`processlist` - This is a basic process listing application based off of [@cobbr's](https://twitter.com/cobbr_io?lang=en) code from [SharpSploit](https://github.com/cobbr/SharpSploit), it will retrieve current running process's PID, PPID, Arch, Name, and Owner.
-
-`run` - This is slightly modified code from [@_RastaMouse](https://twitter.com/_rastamouse?lang=en) which he waskind enough to share after my struggles with named pipes redirection. This assembly executes shell commands while spoofing parent process ID and blocking non microsoft dlls from the process space. Neat little code and seems useful. (this does not execute via `cmd.exe`, if you would like to execute commands through there, start the command with `cmd.exe /c`)
+Additional Atlas specific configuration options in `Config.cs`
 ```
-Usage:
-  run.exe <PPID> <command>
-Example:
-  run.exe 4343 ipconfig /all
-Note: PPID is required for command
+Param				specify the query parameter to use for GET requests
+ChunkSize			specify the chunking size to use for upload/download and command output
+UseDefaultProxy		true or false, specify whether to use the system default proxy settings or use below manual settings 
+ProxyAddress		specify proxy server address to use for web requests
+ProxyUser			specify username to use for authenticating to proxy server
+ProxyPassword		specify password to use for authenticating to proxy server
 ```
 
-`apcinject` - Again, not my code. This is a slightly modified version of process injection using QueueUserAPC with a new process and suspended thread created by [@0xthirteen](https://twitter.com/0xthirteen).
+Then build the agent on a windows system with visual studio or via Mono on a *nix system. 
+
+Once the agent is built, all that's left is to execute.
+
+## Supported Commands
 ```
-Usage:
-  apcinject.exe <path to target application> <base64 shellcode>
-Example:
-  apcinject.exe C:\Windows\System32\svchost.exe SGFjayB0aGUgUGxhbmV0IQ==
+config			dynamically change agent settings during runtime (see below for more detail)
+download		download files from target system to apfell server
+exit			exit atlas instance via Environment.Exit
+jobkill			kill a long running job
+jobs			list current running jobs
+listloaded		list assemblies loaded via the loadassembly command
+loadassembly	load an arbitrary .NET assembly via Assembly.Load and keep track of assembly FullName for later execution
+runassembly		execute the entrypoint of a .NET assembly loaded via loadassembly command
+upload			upload a file from the apfell server to the target system
 ```
 
-## TODO
-- Create Payload docker container to fully integrate into Apfell
-- Create plumbing for HTTP C2 profile use
-- Create `unloadassembly` function to unload assembly from agents AppDomain. @thewover suggested looking into these [APIs](https://docs.microsoft.com/en-us/dotnet/framework/unmanaged-api/debugging/) with examples [here](https://github.com/lowleveldesign/mindbg)
-- Add in preprocessing transforms for obfuscation (ConfuserEx? XOR strings? etc..)
+## Dynamic Configuration
+
+Atlas allows a degree of dynamic configuration of the agent's settings after initial execution. These settings can be changed via the `config` command. below are the options to this command as there are many.
+```
+config				base command
+
+options:
+info				display current agent configuration
+domain				option to add/remove C2 domain
+	add				add a C2 domain to list of domains
+	remove			remove a C2 domain from list of domains (will not let list be less then one domain)
+sleep				sleep time between taskings in seconds
+jitter				variation in sleep time, specify as a percentage
+kill_date			date for agent to exit itself
+host_header			host header to use for domain fronting
+user_agent			user-agent header for web requests
+param				option for query parameter used in GET requests
+proxy				option to modify proxy settings
+	use_default		true/false, choose whether to use system default settings or manual settings specified in config
+	address			address of proxy server
+	username		username to authenticate to proxy server
+	password		password to authenticate to proxy server
+
+Examples:
+config info
+config domain add http://hello.world
+config sleep 60
+config jitter 20
+config kill_date 2020-03-01
+config host_header cdn.cloudfront.com
+config user_agent Mozilla 5.0 IE blah blah blah
+config param order
+config proxy use_default false
+config proxy address 192.168.1.100
+config proxy username harm.j0y
+config proxy password Liv3F0rTh3Tw!ts
+```
+
+## Support Assemblies
+Since functionality in Atlas is loaded via .NET assemblies, I have provided three support .NET projects that give Atlas basic RAT capability. Your welcome to use whatever fits your needs, but these are a good start.
+
+- link here
+
+##  Acknowledgments
+This project would not of been possible without the help and support of my coworkers
+
+- [@its_a_feature_]([https://twitter.com/its_a_feature_](https://twitter.com/its_a_feature_))
+- [@djhohnstein]([https://twitter.com/djhohnstein](https://twitter.com/djhohnstein))
+- [@cobbr_io]([https://twitter.com/cobbr_io](https://twitter.com/cobbr_io))
+- [@001SPARTaN]([https://twitter.com/001spartan](https://twitter.com/001spartan))

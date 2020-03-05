@@ -5,18 +5,9 @@ VisualStudioVersion = 15.0.28307.852
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Atlas", "Atlas\Atlas.csproj", "{05A5D4EB-DC19-4800-89ED-B131B33517DD}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Modules", "Modules", "{EC2E68C8-6AE8-47A7-92EF-52F2CF107CC6}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "run", "run\run.csproj", "{F816C351-B435-4020-83EA-0F99FDBDBF44}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "processlist", "processlist\processlist.csproj", "{59DA8DA9-03E4-4A7E-8BBF-FB5D09F218FB}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "apcinject", "apcinject\apcinject.csproj", "{34646E19-B403-4E4C-971E-633A9C97FF0A}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
-		DEFAULT|Any CPU = DEFAULT|Any CPU
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
@@ -47,13 +38,5 @@ Global
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
-	EndGlobalSection
-	GlobalSection(NestedProjects) = preSolution
-		{F816C351-B435-4020-83EA-0F99FDBDBF44} = {EC2E68C8-6AE8-47A7-92EF-52F2CF107CC6}
-		{59DA8DA9-03E4-4A7E-8BBF-FB5D09F218FB} = {EC2E68C8-6AE8-47A7-92EF-52F2CF107CC6}
-		{34646E19-B403-4E4C-971E-633A9C97FF0A} = {EC2E68C8-6AE8-47A7-92EF-52F2CF107CC6}
-	EndGlobalSection
-	GlobalSection(ExtensibilityGlobals) = postSolution
-		SolutionGuid = {BCCE393B-B4AF-4A0B-B33A-46E974F1A223}
 	EndGlobalSection
 EndGlobal

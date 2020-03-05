@@ -2,13 +2,13 @@
 <Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
-    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Configuration Condition=" '$(Configuration)' == '' ">Release</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
     <ProjectGuid>{05A5D4EB-DC19-4800-89ED-B131B33517DD}</ProjectGuid>
     <OutputType>WinExe</OutputType>
     <RootNamespace>Atlas</RootNamespace>
     <AssemblyName>Atlas</AssemblyName>
-    <TargetFrameworkVersion>v4.0</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v3.5</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <Deterministic>true</Deterministic>
     <NuGetPackageImportStamp>
@@ -28,6 +28,7 @@
     <IsWebBootstrapper>false</IsWebBootstrapper>
     <UseApplicationTrust>false</UseApplicationTrust>
     <BootstrapperEnabled>true</BootstrapperEnabled>
+    <TargetFrameworkProfile />
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <PlatformTarget>AnyCPU</PlatformTarget>
@@ -66,11 +67,10 @@
     <Compile Include="Http.cs" />
     <Compile Include="Modules.cs" />
     <Compile Include="Program.cs" />
-    <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Utils.cs" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="TODO.md" />
+    <None Include="app.config" />
   </ItemGroup>
   <ItemGroup>
     <BootstrapperPackage Include="Microsoft.Net.Framework.3.5.SP1">
