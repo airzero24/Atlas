@@ -9,6 +9,7 @@ Atlas is a lightweight Windows Apfell agent written in C#. It was intended to be
 - Dynamic .NET assembly loading and execution
 	- Loaded assemblies are tracked so they only need to be loaded once
 - Upload/Download files
+- AMSI bypass when loading assemblies
 - Proxy support
 - Dynamic agent configuration
 	- Add/remove C2 servers
@@ -48,7 +49,7 @@ exit			exit atlas instance via Environment.Exit
 jobkill			kill a long running job
 jobs			list current running jobs
 listloaded		list assemblies loaded via the loadassembly command
-loadassembly	load an arbitrary .NET assembly via Assembly.Load and keep track of assembly FullName for later execution
+loadassembly		load an arbitrary .NET assembly via Assembly.Load and keep track of assembly FullName for later execution
 runassembly		execute the entrypoint of a .NET assembly loaded via loadassembly command
 upload			upload a file from the apfell server to the target system
 ```
