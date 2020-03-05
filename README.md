@@ -99,7 +99,7 @@ Since functionality in Atlas is loaded via .NET assemblies, I have provided thre
 ##  Acknowledgments
 This project would not of been possible without the help and support of my coworkers
 
-- [@its_a_feature_]([https://twitter.com/its_a_feature_](https://twitter.com/its_a_feature_))
-- [@djhohnstein]([https://twitter.com/djhohnstein](https://twitter.com/djhohnstein))
-- [@cobbr_io]([https://twitter.com/cobbr_io](https://twitter.com/cobbr_io))
-- [@001SPARTaN]([https://twitter.com/001spartan](https://twitter.com/001spartan))
+- [@its_a_feature_](https://twitter.com/its_a_feature_)
+- [@djhohnstein](https://twitter.com/djhohnstein)
+- [@cobbr_io](https://twitter.com/cobbr_io)
+- [@001SPARTaN](https://twitter.com/001spartan)
