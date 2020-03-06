@@ -29,11 +29,11 @@ You can then register the payload with the Apfell server via `Create Components 
 
 Additional Atlas specific configuration options in `Config.cs`
 ```
-Param				specify the query parameter to use for GET requests
-ChunkSize			specify the chunking size to use for upload/download and command output
+Param			specify the query parameter to use for GET requests
+ChunkSize		specify the chunking size to use for upload/download and command output
 UseDefaultProxy		true or false, specify whether to use the system default proxy settings or use below manual settings 
 ProxyAddress		specify proxy server address to use for web requests
-ProxyUser			specify username to use for authenticating to proxy server
+ProxyUser		specify username to use for authenticating to proxy server
 ProxyPassword		specify password to use for authenticating to proxy server
 ```
 
@@ -63,7 +63,7 @@ config				base command
 options:
 info				display current agent configuration
 domain				option to add/remove C2 domain
-	add				add a C2 domain to list of domains
+	add			add a C2 domain to list of domains
 	remove			remove a C2 domain from list of domains (will not let list be less then one domain)
 sleep				sleep time between taskings in seconds
 jitter				variation in sleep time, specify as a percentage
