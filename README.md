@@ -114,6 +114,12 @@ Example:
   apcinject.exe C:\Windows\System32\svchost.exe SGFjayB0aGUgUGxhbmV0IQ==
 ```
 
+## TODO
+- HTTP Profile
+- File Browser Commands (ls & rm)
+- Process listing hook
+- unloadassembly
+
 ##  Acknowledgments
 This project would not of been possible without the help and support of my coworkers
 
