@@ -1,7 +1,7 @@
 # Atlas
 ![](Atlas.png?style=centerme)
 
-Atlas is a lightweight Windows Apfell agent written in C#. It was intended to be used as an initial access agent with a focus on stability and flexibility in its configuration. I create the agent in an attempt to learn more about coding in C#, so the code is not optimized or written in the "proper" way. It was a fun project and I hope it may be useful to people for red team assessments and penetration testing.
+Atlas is a lightweight Windows Apfell agent written in C#. It was intended to be used as an initial access agent with a focus on stability and flexibility in its configuration. I created the agent in an attempt to learn more about coding in C#, so the code is not optimized or written in the "proper" way. It was a fun project and I hope it may be useful to people for red team assessments and penetration testing.
 
 ## Features
 - 3.5/4.0 .NET compatibility
